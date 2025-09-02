@@ -1,6 +1,7 @@
-// index.js
 const fs = require('fs');
-const { Client, GatewayIntentBits } = require('discord.js');
+const path = require('path');
+const { Client, GatewayIntentBits, Collection } = require('discord.js');
+require('dotenv').config();
 
 const client = new Client({
   intents: [
@@ -10,85 +11,43 @@ const client = new Client({
   ],
 });
 
-const PREFIX = '!';
-let truckers = {}; // Active delivery sessions
-let balances = {}; // Player balances
+client.commands = new Collection();
 
-// Load balances from file
-if (fs.existsSync('balances.json')) {
-  balances = JSON.parse(fs.readFileSync('balances.json'));
+// Load commands from the commands folder
+const commandsPath = path.join(__dirname, 'commands');
+const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+
+for (const file of commandFiles) {
+  const filePath = path.join(commandsPath, file);
+  const command = require(filePath);
+  if ('data' in command && 'execute' in command) {
+    client.commands.set(command.data.name, command);
+  } else {
+    console.log(`[WARNING] The command at ${filePath} is missing "data" or "execute".`);
+  }
 }
 
-// Save balances to file
-function saveBalances() {
-  fs.writeFileSync('balances.json', JSON.stringify(balances, null, 2));
-}
-
-// When bot is ready
 client.once('ready', () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
+  console.log(`✅ Logged in as ${client.user.tag}!`);
 });
 
-// Listen for commands
-client.on('messageCreate', async (message) => {
-  if (message.author.bot || !message.content.startsWith(PREFIX)) return;
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isChatInputCommand()) return;
 
-  const args = message.content.slice(PREFIX.length).trim().split(/ +/);
-  const command = args.shift().toLowerCase();
+  const command = client.commands.get(interaction.commandName);
 
-  // Check role requirement
-  if (!message.member.roles.cache.some((role) => role.name === 'trucker') && command !== 'balance') {
-    return message.reply('🚫 You need the **trucker** role to use this command.');
+  if (!command) {
+    console.error(`No command found for ${interaction.commandName}`);
+    return;
   }
 
-  if (command === 'startshift') {
-    if (truckers[message.author.id]) {
-      return message.reply('🚚 You are already on a shift!');
-    }
-    truckers[message.author.id] = { deliveries: 0 };
-    return message.reply('🟢 Shift started! Use `!deliver` to deliver boxes.');
-  }
-
-  if (command === 'deliver') {
-    if (!truckers[message.author.id]) {
-      return message.reply('❌ You are not on a shift! Start with `!startshift`.');
-    }
-
-    // Locations and payout
-    const locations = [
-      { name: 'Los Santos Docks', payout: 100 },
-      { name: 'Paleto Bay', payout: 250 },
-      { name: 'Sandy Shores', payout: 200 },
-      { name: 'Downtown Vinewood', payout: 150 },
-    ];
-    const delivery = locations[Math.floor(Math.random() * locations.length)];
-
-    truckers[message.author.id].deliveries += 1;
-
-    return message.reply(`📦 Delivered to **${delivery.name}** for **$${delivery.payout}**!`);
-  }
-
-  if (command === 'endshift') {
-    const session = truckers[message.author.id];
-    if (!session) return message.reply('❌ You are not on a shift.');
-
-    // Calculate earnings
-    const deliveries = session.deliveries;
-    const totalPay = deliveries * 100; // Simple payout formula
-
-    // Add to balance
-    balances[message.author.id] = (balances[message.author.id] || 0) + totalPay;
-    saveBalances();
-
-    delete truckers[message.author.id];
-    return message.reply(`🔴 Shift ended! You delivered **${deliveries} boxes** and earned **$${totalPay}**.`);
-  }
-
-  if (command === 'balance') {
-    const bal = balances[message.author.id] || 0;
-    return message.reply(`💰 Your balance: **$${bal}**`);
+  try {
+    await command.execute(interaction);
+  } catch (error) {
+    console.error(error);
+    await interaction.reply({ content: 'There was an error executing this command!', ephemeral: true });
   }
 });
 
-// Login
-client.login(process.env.DISCORD_TOKEN);
+client.login(process.env.TOKEN);
+
