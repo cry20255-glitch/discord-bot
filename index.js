@@ -1,5 +1,5 @@
 const { Client, GatewayIntentBits } = require('discord.js');
-const TOKEN = process.env.TOKEN; // No token in GitHub now
+const TOKEN = process.env.TOKEN; // We use env variable
 
 const client = new Client({
   intents: [
