@@ -1,35 +1,46 @@
-const { REST, Routes } = require('discord.js');
-const fs = require('fs');
-require('dotenv').config();
+const { SlashCommandBuilder } = require('discord.js');
 
-// Load your environment variables (TOKEN, CLIENT_ID, GUILD_ID)
-const TOKEN = process.env.TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID; // Your bot's client/application ID
-const GUILD_ID = process.env.GUILD_ID;   // Your server ID
+// Example locations from GTA 5
+const LOCATIONS = [
+  { name: 'Vespucci Beach', distance: 3 },
+  { name: 'Del Perro Pier', distance: 5 },
+  { name: 'Downtown Vinewood', distance: 8 },
+  { name: 'Paleto Bay', distance: 15 },
+  { name: 'Sandy Shores', distance: 12 }
+];
 
-const commands = [];
-const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
+let balances = {}; // Store balances in memory
 
-// Grab all the command files
-for (const file of commandFiles) {
-  const command = require(`./commands/${file}`);
-  commands.push(command.data.toJSON());
-}
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('delivery')
+    .setDescription('Start an Uber or DoorDash delivery job.')
+    .addStringOption(option =>
+      option.setName('service')
+        .setDescription('Choose delivery service')
+        .setRequired(true)
+        .addChoices(
+          { name: 'Uber', value: 'uber' },
+          { name: 'DoorDash', value: 'doordash' }
+        )
+    ),
+  async execute(interaction) {
+    const service = interaction.options.getString('service');
+    const userId = interaction.user.id;
 
-// Deploy commands
-const rest = new REST({ version: '10' }).setToken(TOKEN);
+    // Pick a random location
+    const location = LOCATIONS[Math.floor(Math.random() * LOCATIONS.length)];
 
-(async () => {
-  try {
-    console.log(`Started refreshing ${commands.length} application (/) commands.`);
+    // Calculate payout based on distance
+    const payout = location.distance * (service === 'uber' ? 20 : 15);
 
-    await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-      { body: commands },
+    // Add balance
+    if (!balances[userId]) balances[userId] = 0;
+    balances[userId] += payout;
+
+    await interaction.reply(
+      `🚗 You completed a **${service.toUpperCase()}** delivery to **${location.name}**!\n` +
+      `💰 You earned **$${payout}**. Total balance: **$${balances[userId]}**`
     );
-
-    console.log(`Successfully reloaded ${commands.length} application (/) commands.`);
-  } catch (error) {
-    console.error(error);
-  }
-})();
+  },
+};
