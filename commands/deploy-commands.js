@@ -1,3 +1,4 @@
+const fs = require('fs');
 const { SlashCommandBuilder } = require('discord.js');
 
 // Example locations from GTA 5
@@ -9,7 +10,18 @@ const LOCATIONS = [
   { name: 'Sandy Shores', distance: 12 }
 ];
 
-let balances = {}; // Store balances in memory
+const BALANCES_FILE = './balances.json';
+
+// Load balances from file or initialize empty object
+let balances = {};
+if (fs.existsSync(BALANCES_FILE)) {
+  balances = JSON.parse(fs.readFileSync(BALANCES_FILE, 'utf8'));
+}
+
+// Save balances to file
+function saveBalances() {
+  fs.writeFileSync(BALANCES_FILE, JSON.stringify(balances, null, 2));
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -28,15 +40,27 @@ module.exports = {
     const service = interaction.options.getString('service');
     const userId = interaction.user.id;
 
+    // Check for correct role
+    const uberRole = interaction.guild.roles.cache.find(r => r.name.toLowerCase() === 'uber');
+    const doorDashRole = interaction.guild.roles.cache.find(r => r.name.toLowerCase() === 'doordash');
+
+    if (
+      (service === 'uber' && (!uberRole || !interaction.member.roles.cache.has(uberRole.id))) ||
+      (service === 'doordash' && (!doorDashRole || !interaction.member.roles.cache.has(doorDashRole.id)))
+    ) {
+      return interaction.reply({ content: `❌ You need the **${service}** role to use this command!`, ephemeral: true });
+    }
+
     // Pick a random location
     const location = LOCATIONS[Math.floor(Math.random() * LOCATIONS.length)];
 
-    // Calculate payout based on distance
+    // Calculate payout
     const payout = location.distance * (service === 'uber' ? 20 : 15);
 
-    // Add balance
+    // Update balance
     if (!balances[userId]) balances[userId] = 0;
     balances[userId] += payout;
+    saveBalances();
 
     await interaction.reply(
       `🚗 You completed a **${service.toUpperCase()}** delivery to **${location.name}**!\n` +
@@ -44,3 +68,4 @@ module.exports = {
     );
   },
 };
+
