@@ -1,20 +1,15 @@
 // index.js
+require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
-require('dotenv').config(); // Optional if you're running locally
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
 });
 
-// Load token from Render environment
 const TOKEN = process.env.TOKEN;
 
 if (!TOKEN) {
-  console.error("❌ No token found! Set TOKEN in Render Environment Variables.");
+  console.error("❌ No TOKEN found! Make sure you set it in Render Environment Variables.");
   process.exit(1);
 }
 
@@ -23,11 +18,11 @@ client.once('ready', () => {
 });
 
 client.on('messageCreate', (message) => {
-  if (message.author.bot) return;
-
   if (message.content === '!ping') {
-    message.reply('Pong!');
+    message.reply('Pong! 🏓');
   }
 });
 
-client.login(TOKEN);
+client.login(TOKEN).catch(err => {
+  console.error("❌ Login failed:", err);
+});
