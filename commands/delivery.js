@@ -46,52 +46,59 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    const userId = interaction.user.id;
-    const service = interaction.options.getString('service');
+    try {
+      const userId = interaction.user.id;
+      const service = interaction.options.getString('service');
 
-    // Check cooldown
-    const now = Date.now();
-    if (cooldowns.has(userId)) {
-      const expiration = cooldowns.get(userId) + COOLDOWN_TIME;
-      if (now < expiration) {
-        const remaining = Math.ceil((expiration - now) / 1000);
-        return interaction.reply({ content: `⏳ Please wait **${remaining} seconds** before doing another delivery.`, ephemeral: true });
+      // Acknowledge immediately
+      await interaction.deferReply();
+
+      // Check cooldown
+      const now = Date.now();
+      if (cooldowns.has(userId)) {
+        const expiration = cooldowns.get(userId) + COOLDOWN_TIME;
+        if (now < expiration) {
+          const remaining = Math.ceil((expiration - now) / 1000);
+          return interaction.editReply(`⏳ Please wait **${remaining} seconds** before doing another delivery.`);
+        }
+      }
+
+      cooldowns.set(userId, now);
+
+      // Random location
+      const randomLocation = locations[Math.floor(Math.random() * locations.length)];
+
+      // Pay by service
+      let minPay, maxPay, time;
+      if (service === 'uber') {
+        minPay = 100; maxPay = 300; time = 3000;
+      } else if (service === 'doordash') {
+        minPay = 150; maxPay = 400; time = 4000;
+      } else if (service === 'trucker') {
+        minPay = 500; maxPay = 1000; time = 6000;
+      }
+
+      const earnings = Math.floor(Math.random() * (maxPay - minPay + 1)) + minPay;
+
+      // Simulate delivery
+      setTimeout(() => {
+        if (!playerData[userId]) {
+          playerData[userId] = { balance: 0, xp: 0, level: 1 };
+        }
+        playerData[userId].balance += earnings;
+        playerData[userId].xp += Math.floor(earnings / 10);
+        savePlayerData();
+
+        interaction.editReply(
+          `🚗 You completed a **${service}** delivery to **${randomLocation}** and earned **$${earnings}**!\n💰 New balance: **$${playerData[userId].balance}**`
+        );
+      }, time);
+
+    } catch (err) {
+      console.error(err);
+      if (!interaction.replied) {
+        await interaction.reply({ content: '❌ There was an error executing this command.', ephemeral: true });
       }
     }
-
-    // Put user on cooldown
-    cooldowns.set(userId, now);
-
-    await interaction.deferReply(); // Prevent timeout
-
-    // Choose random location
-    const randomLocation = locations[Math.floor(Math.random() * locations.length)];
-
-    // Earnings based on service
-    let minPay, maxPay, time;
-    if (service === 'uber') {
-      minPay = 100; maxPay = 300; time = 3000; // 3 sec wait
-    } else if (service === 'doordash') {
-      minPay = 150; maxPay = 400; time = 4000; // 4 sec wait
-    } else if (service === 'trucker') {
-      minPay = 500; maxPay = 1000; time = 6000; // 6 sec wait
-    }
-
-    const earnings = Math.floor(Math.random() * (maxPay - minPay + 1)) + minPay;
-
-    // Simulate delivery
-    setTimeout(() => {
-      // Update player data
-      if (!playerData[userId]) {
-        playerData[userId] = { balance: 0, xp: 0, level: 1 };
-      }
-      playerData[userId].balance += earnings;
-      playerData[userId].xp += Math.floor(earnings / 10);
-      savePlayerData();
-
-      interaction.editReply(
-        `🚗 You completed a **${service}** delivery to **${randomLocation}** and earned **$${earnings}**!\n💰 Your new balance: **$${playerData[userId].balance}**`
-      );
-    }, time);
   },
 };
