@@ -2,13 +2,14 @@ const fs = require('fs');
 const { SlashCommandBuilder } = require('discord.js');
 
 const DATA_FILE = './playerData.json';
-
-// Load player data (balances, xp, levels)
 let playerData = {};
+
+// Load player data
 if (fs.existsSync(DATA_FILE)) {
   playerData = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
 }
 
+// Save player data
 function savePlayerData() {
   fs.writeFileSync(DATA_FILE, JSON.stringify(playerData, null, 2));
 }
@@ -25,83 +26,72 @@ const locations = [
   "Rockford Hills"
 ];
 
+// Cooldowns
 const cooldowns = new Map();
 const COOLDOWN_TIME = 60 * 1000; // 60 seconds
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('delivery')
-    .setDescription('Start a delivery job (Uber or DoorDash).')
+    .setDescription('Start a delivery job (Uber, DoorDash, or Trucker).')
     .addStringOption(option =>
       option.setName('service')
-        .setDescription('Choose Uber or DoorDash')
+        .setDescription('Choose a service')
         .setRequired(true)
         .addChoices(
           { name: 'Uber', value: 'uber' },
           { name: 'DoorDash', value: 'doordash' },
-        )),
-  async execute(interaction) {
-    const service = interaction.options.getString('service');
-    const userId = interaction.user.id;
+          { name: 'Trucker', value: 'trucker' }
+        )
+    ),
 
-    // Cooldown
+  async execute(interaction) {
+    const userId = interaction.user.id;
+    const service = interaction.options.getString('service');
+
+    // Check cooldown
+    const now = Date.now();
     if (cooldowns.has(userId)) {
-      const remaining = cooldowns.get(userId) - Date.now();
-      if (remaining > 0) {
-        return interaction.reply({
-          content: `⏳ You must wait **${Math.ceil(remaining / 1000)}s** before another delivery!`,
-          ephemeral: true
-        });
+      const expiration = cooldowns.get(userId) + COOLDOWN_TIME;
+      if (now < expiration) {
+        const remaining = Math.ceil((expiration - now) / 1000);
+        return interaction.reply({ content: `⏳ Please wait **${remaining} seconds** before doing another delivery.`, ephemeral: true });
       }
     }
 
-    // Role check
-    const uberRole = interaction.guild.roles.cache.find(r => r.name === 'Uber');
-    const doorDashRole = interaction.guild.roles.cache.find(r => r.name === 'DoorDash');
+    // Put user on cooldown
+    cooldowns.set(userId, now);
 
-    if (service === 'uber' && !interaction.member.roles.cache.has(uberRole?.id)) {
-      return interaction.reply({ content: '🚗 You need the **Uber** role to take Uber jobs!', ephemeral: true });
-    }
-    if (service === 'doordash' && !interaction.member.roles.cache.has(doorDashRole?.id)) {
-      return interaction.reply({ content: '🍔 You need the **DoorDash** role to take DoorDash jobs!', ephemeral: true });
-    }
+    await interaction.deferReply(); // Prevent timeout
 
-    // Choose location and payout
-    const location = locations[Math.floor(Math.random() * locations.length)];
-    const payout = service === 'uber'
-      ? Math.floor(Math.random() * 200) + 200
-      : Math.floor(Math.random() * 100) + 100;
+    // Choose random location
+    const randomLocation = locations[Math.floor(Math.random() * locations.length)];
 
-    // Give XP
-    const xpEarned = Math.floor(Math.random() * 20) + 10;
-
-    // Init player data
-    if (!playerData[userId]) {
-      playerData[userId] = { balance: 0, xp: 0, level: 1 };
+    // Earnings based on service
+    let minPay, maxPay, time;
+    if (service === 'uber') {
+      minPay = 100; maxPay = 300; time = 3000; // 3 sec wait
+    } else if (service === 'doordash') {
+      minPay = 150; maxPay = 400; time = 4000; // 4 sec wait
+    } else if (service === 'trucker') {
+      minPay = 500; maxPay = 1000; time = 6000; // 6 sec wait
     }
 
-    // Update stats
-    playerData[userId].balance += payout;
-    playerData[userId].xp += xpEarned;
+    const earnings = Math.floor(Math.random() * (maxPay - minPay + 1)) + minPay;
 
-    // Leveling system
-    const xpNeeded = playerData[userId].level * 100;
-    let leveledUp = false;
-    if (playerData[userId].xp >= xpNeeded) {
-      playerData[userId].level++;
-      playerData[userId].xp -= xpNeeded;
-      leveledUp = true;
-    }
+    // Simulate delivery
+    setTimeout(() => {
+      // Update player data
+      if (!playerData[userId]) {
+        playerData[userId] = { balance: 0, xp: 0, level: 1 };
+      }
+      playerData[userId].balance += earnings;
+      playerData[userId].xp += Math.floor(earnings / 10);
+      savePlayerData();
 
-    savePlayerData();
-
-    cooldowns.set(userId, Date.now() + COOLDOWN_TIME);
-    setTimeout(() => cooldowns.delete(userId), COOLDOWN_TIME);
-
-    let replyMsg = `✅ You completed a **${service.toUpperCase()}** delivery to **${location}**!\n💰 Earned: **$${payout}**\n⭐ XP Gained: **${xpEarned}**\n`;
-    if (leveledUp) replyMsg += `🎉 **You leveled up to Level ${playerData[userId].level}!**`;
-
-    await interaction.reply(replyMsg);
+      interaction.editReply(
+        `🚗 You completed a **${service}** delivery to **${randomLocation}** and earned **$${earnings}**!\n💰 Your new balance: **$${playerData[userId].balance}**`
+      );
+    }, time);
   },
 };
-
