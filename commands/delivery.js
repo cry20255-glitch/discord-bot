@@ -1,63 +1,72 @@
+const fs = require('fs');
 const { SlashCommandBuilder } = require('discord.js');
 
-let truckers = {}; // Active delivery sessions
-let balances = {}; // Player balances
+const BALANCES_FILE = './balances.json';
 
-// Example GTA V locations
+// Load balances from file or initialize empty object
+let balances = {};
+if (fs.existsSync(BALANCES_FILE)) {
+  balances = JSON.parse(fs.readFileSync(BALANCES_FILE, 'utf8'));
+}
+
+function saveBalances() {
+  fs.writeFileSync(BALANCES_FILE, JSON.stringify(balances, null, 2));
+}
+
+// Predefined locations for deliveries
 const locations = [
-  { name: "Los Santos Docks", distance: 5 },
-  { name: "Paleto Bay", distance: 15 },
-  { name: "Sandy Shores", distance: 10 },
-  { name: "Vinewood Hills", distance: 7 },
+  "Vespucci Beach",
+  "Downtown Vinewood",
+  "Sandy Shores",
+  "Paleto Bay",
+  "Los Santos Airport",
+  "Mirror Park",
+  "Grapeseed",
+  "Rockford Hills"
 ];
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('trucker')
-    .setDescription('Start or end a trucker delivery shift')
+    .setName('delivery')
+    .setDescription('Start a delivery job (Uber or DoorDash).')
     .addStringOption(option =>
-      option.setName('action')
-        .setDescription('Choose start or end')
+      option.setName('service')
+        .setDescription('Choose Uber or DoorDash')
         .setRequired(true)
         .addChoices(
-          { name: 'Start Shift', value: 'start' },
-          { name: 'End Shift', value: 'end' }
-        )
-    ),
-
+          { name: 'Uber', value: 'uber' },
+          { name: 'DoorDash', value: 'doordash' },
+        )),
   async execute(interaction) {
-    const action = interaction.options.getString('action');
+    const service = interaction.options.getString('service');
     const userId = interaction.user.id;
-    const member = interaction.member;
 
-    // Check for Trucker role
-    if (!member.roles.cache.some(role => role.name.toLowerCase() === 'trucker')) {
-      return interaction.reply({ content: '❌ You need the **Trucker** role to use this command.', ephemeral: true });
+    // Role Check
+    const uberRole = interaction.guild.roles.cache.find(r => r.name === 'Uber');
+    const doorDashRole = interaction.guild.roles.cache.find(r => r.name === 'DoorDash');
+
+    if (service === 'uber' && !interaction.member.roles.cache.has(uberRole?.id)) {
+      return interaction.reply({ content: '🚗 You need the **Uber** role to take Uber jobs!', ephemeral: true });
+    }
+    if (service === 'doordash' && !interaction.member.roles.cache.has(doorDashRole?.id)) {
+      return interaction.reply({ content: '🍔 You need the **DoorDash** role to take DoorDash jobs!', ephemeral: true });
     }
 
-    if (action === 'start') {
-      if (truckers[userId]) {
-        return interaction.reply({ content: '🚚 You are already on a delivery shift!', ephemeral: true });
-      }
+    // Pick a random location
+    const location = locations[Math.floor(Math.random() * locations.length)];
 
-      const location = locations[Math.floor(Math.random() * locations.length)];
-      truckers[userId] = location;
+    // Set payouts
+    const payout = service === 'uber'
+      ? Math.floor(Math.random() * 200) + 200 // Uber pays $200-$400
+      : Math.floor(Math.random() * 100) + 100; // DoorDash pays $100-$200
 
-      return interaction.reply(`🚛 You started your delivery! Drive to **${location.name}** to drop off your package.`);
-    }
+    // Update balance
+    if (!balances[userId]) balances[userId] = 0;
+    balances[userId] += payout;
+    saveBalances();
 
-    if (action === 'end') {
-      if (!truckers[userId]) {
-        return interaction.reply({ content: '❌ You are not currently on a shift.', ephemeral: true });
-      }
-
-      const location = truckers[userId];
-      const payout = location.distance * 100; // Example: 100 per distance unit
-      balances[userId] = (balances[userId] || 0) + payout;
-
-      delete truckers[userId];
-
-      return interaction.reply(`✅ Delivery complete! You earned **$${payout}**. Your total balance is **$${balances[userId]}**.`);
-    }
+    await interaction.reply(
+      `✅ You completed a **${service.toUpperCase()}** delivery to **${location}** and earned **$${payout}**!`
+    );
   },
 };
